@@ -3,6 +3,9 @@
     "allow": [
       "Bash(npx tsc *)",
       "Bash(npm run *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\tuncay\\Desktop\\chae\\src\\app\\admin\\(protected)\\webtoons\\[id]\\chapters"
     ]
   }
 }

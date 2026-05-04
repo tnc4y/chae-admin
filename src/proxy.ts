@@ -1,10 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const ADMIN_PATHS = ['/admin']
 const AUTH_PATHS = ['/admin/login']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -31,25 +30,25 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
 
-  const isAdminPath = ADMIN_PATHS.some(p => pathname.startsWith(p))
   const isAuthPath = AUTH_PATHS.some(p => pathname.startsWith(p))
+  const isProtectedPath = pathname.startsWith('/admin') && !isAuthPath
 
   // Not logged in → redirect to login
-  if (isAdminPath && !isAuthPath && !user) {
+  if (isProtectedPath && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/admin/login'
     return NextResponse.redirect(url)
   }
 
-  // Logged in → check admin/moderator role
-  if (isAdminPath && !isAuthPath && user) {
+  // Logged in on protected path → check role
+  if (isProtectedPath && user) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    if (!profile || !['admin', 'moderator'].includes(profile.role)) {
+    if (!profile || !['admin', 'moderator'].includes(profile.role as string)) {
       const url = request.nextUrl.clone()
       url.pathname = '/admin/login'
       url.searchParams.set('error', 'unauthorized')
@@ -57,7 +56,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Already logged in admin → redirect away from login
+  // Already logged-in admin on login page → redirect to dashboard
   if (isAuthPath && user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -65,7 +64,7 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (profile && ['admin', 'moderator'].includes(profile.role)) {
+    if (profile && ['admin', 'moderator'].includes(profile.role as string)) {
       const url = request.nextUrl.clone()
       url.pathname = '/admin/dashboard'
       return NextResponse.redirect(url)
