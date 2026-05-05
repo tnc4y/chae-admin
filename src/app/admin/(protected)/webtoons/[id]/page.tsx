@@ -36,7 +36,7 @@ export default async function WebtoonDetailPage({ params }: Props) {
   const chapterStorageMap = Object.fromEntries(
     (chapterStorageRows ?? []).map((r) => [r.chapter_id, Number(r.total_size ?? 0)])
   )
-  const webtoonTotalStorage = Object.values(chapterStorageMap).reduce((s, v) => s + v, 0)
+  const webtoonTotalStorage = Object.values(chapterStorageMap).reduce((s: number, v) => s + v, 0)
 
   const initialData = {
     id: webtoon.id,
