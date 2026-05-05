@@ -7,7 +7,7 @@ import {
   Loader2, Upload, X, GripVertical, ImagePlus,
   ArrowLeft, Eye, EyeOff, Lock, Unlock, Monitor,
   ChevronLeft, ChevronRight, AlertCircle,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, BookOpen, CheckCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -293,6 +293,128 @@ function PreviewModal({
 }
 
 // ─────────────────────────────────────────────
+// CBZ Preview Modal
+// ─────────────────────────────────────────────
+function CbzPreviewModal({
+  pages,
+  onConfirm,
+  onClose,
+}: {
+  pages: PageItem[]
+  onConfirm: (pages: PageItem[]) => void
+  onClose: () => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(pages.map(p => p.uid)))
+
+  const toggle = (uid: string) =>
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(uid) ? next.delete(uid) : next.add(uid)
+      return next
+    })
+
+  const selectedPages = pages.filter(p => selected.has(p.uid))
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-3 bg-slate-950 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <BookOpen className="w-5 h-5 text-violet-400" />
+          <p className="text-white font-semibold text-sm">CBZ Önizleme</p>
+          <span className="text-slate-400 text-xs">
+            {pages.length} sayfa bulundu · {selected.size} seçili
+          </span>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-white transition p-1">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Sub-header: select all + info */}
+      <div className="flex items-center gap-4 px-6 py-2 bg-slate-900/80 border-b border-slate-800 flex-shrink-0">
+        <button
+          onClick={() => setSelected(new Set(pages.map(p => p.uid)))}
+          className="text-xs text-slate-400 hover:text-white transition"
+        >
+          Tümünü seç
+        </button>
+        <span className="text-slate-700 text-xs">·</span>
+        <button
+          onClick={() => setSelected(new Set())}
+          className="text-xs text-slate-400 hover:text-white transition"
+        >
+          Tümünü kaldır
+        </button>
+        <span className="flex-1" />
+        <p className="text-slate-500 text-xs">İstemediğin sayfaları tıklayarak çıkar</p>
+      </div>
+
+      {/* Scrollable grid */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5">
+        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 max-w-6xl mx-auto">
+          {pages.map((page, i) => {
+            const isOn = selected.has(page.uid)
+            return (
+              <button
+                key={page.uid}
+                type="button"
+                onClick={() => toggle(page.uid)}
+                className={cn(
+                  'relative aspect-[2/3] rounded-lg overflow-hidden border-2 transition-all',
+                  isOn ? 'border-violet-500' : 'border-slate-700 opacity-40',
+                )}
+              >
+                <img
+                  src={page.preview}
+                  alt={`Sayfa ${i + 1}`}
+                  className="w-full h-full object-cover"
+                  draggable={false}
+                />
+                <div className="absolute bottom-0.5 left-0.5 bg-black/70 text-white text-[10px] font-bold px-1 rounded leading-4">
+                  {i + 1}
+                </div>
+                {isOn && (
+                  <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-violet-500 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-3 h-3 text-white" />
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-950 border-t border-slate-800 flex-shrink-0">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-5 py-2 text-sm text-slate-300 hover:text-white border border-slate-700 rounded-xl transition"
+        >
+          İptal
+        </button>
+        <button
+          type="button"
+          disabled={selected.size === 0}
+          onClick={() => { onConfirm(selectedPages); onClose() }}
+          className="px-5 py-2 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-500 disabled:bg-violet-800 disabled:opacity-50 rounded-xl transition"
+        >
+          {selected.size} sayfayı ekle
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
 // Main Form
 // ─────────────────────────────────────────────
 export default function ChapterForm({
@@ -307,6 +429,11 @@ export default function ChapterForm({
   const isEdit = !!initialData?.id
   const isWebtoon = webtoonType === 'webtoon' || webtoonType === 'manhwa'
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cbzInputRef = useRef<HTMLInputElement>(null)
+
+  const [cbzPreviewPages, setCbzPreviewPages] = useState<PageItem[]>([])
+  const [showCbzPreview, setShowCbzPreview] = useState(false)
+  const [cbzLoading, setCbzLoading] = useState(false)
 
   const [form, setForm] = useState({
     chapter_number: initialData?.chapter_number ?? nextChapterNumber,
@@ -351,6 +478,45 @@ export default function ChapterForm({
         isNew: true,
       }))
     setPages(prev => [...prev, ...newItems])
+  }
+
+  async function handleCbzSelected(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    setCbzLoading(true)
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = await JSZip.loadAsync(file)
+      const names = Object.keys(zip.files)
+        .filter(n => /\.(jpe?g|png|webp|gif|bmp)$/i.test(n) && !zip.files[n].dir)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      const items: PageItem[] = await Promise.all(
+        names.map(async name => {
+          const blob = await zip.files[name].async('blob')
+          const ext = name.split('.').pop()?.toLowerCase() ?? 'jpg'
+          const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+          const typed = new Blob([blob], { type: mime })
+          return {
+            uid: crypto.randomUUID(),
+            file: new File([typed], name, { type: mime }),
+            preview: URL.createObjectURL(typed),
+            isNew: true,
+          }
+        })
+      )
+      if (items.length === 0) { setError('CBZ içinde resim bulunamadı.'); return }
+      setCbzPreviewPages(items)
+      setShowCbzPreview(true)
+    } catch {
+      setError('CBZ dosyası okunamadı.')
+    } finally {
+      setCbzLoading(false)
+      if (cbzInputRef.current) cbzInputRef.current.value = ''
+    }
+  }
+
+  function handleCbzConfirm(confirmed: PageItem[]) {
+    setPages(prev => [...prev, ...confirmed])
   }
 
   function removePage(uid: string) {
@@ -485,6 +651,13 @@ export default function ChapterForm({
       {showPreview && (
         <PreviewModal pages={pages} isWebtoon={isWebtoon} onClose={() => setShowPreview(false)} />
       )}
+      {showCbzPreview && (
+        <CbzPreviewModal
+          pages={cbzPreviewPages}
+          onConfirm={handleCbzConfirm}
+          onClose={() => setShowCbzPreview(false)}
+        />
+      )}
 
       <form onSubmit={handleSubmit} className="max-w-5xl">
         {error && (
@@ -512,8 +685,24 @@ export default function ChapterForm({
                 {isWebtoon ? 'Webtoon: yukarıdan aşağıya okunur' : 'Manga: sağdan sola, kitap gibi'}
                 {' · '}JPG, PNG, WebP · Çoklu seçim
               </p>
+              <div className="mt-3 flex items-center justify-center gap-2" onClick={e => e.stopPropagation()}>
+                <span className="text-slate-700 text-xs">veya</span>
+                <button
+                  type="button"
+                  disabled={cbzLoading}
+                  onClick={() => cbzInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-violet-500/50 text-slate-300 hover:text-white text-xs rounded-lg transition"
+                >
+                  {cbzLoading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <BookOpen className="w-3.5 h-3.5" />}
+                  CBZ yükle
+                </button>
+              </div>
               <input ref={fileInputRef} type="file" accept="image/*" multiple
                 onChange={e => handleFilesSelected(e.target.files)} className="hidden" />
+              <input ref={cbzInputRef} type="file" accept=".cbz"
+                onChange={e => handleCbzSelected(e.target.files)} className="hidden" />
             </div>
 
             {/* Page grid */}
