@@ -33,10 +33,10 @@ export default async function WebtoonDetailPage({ params }: Props) {
     ? await supabase.from('v_chapter_storage').select('chapter_id, total_size').in('chapter_id', chapterIds)
     : { data: [] }
 
-  const chapterStorageMap = Object.fromEntries(
+  const chapterStorageMap: Record<string, number> = Object.fromEntries(
     (chapterStorageRows ?? []).map((r) => [r.chapter_id, Number(r.total_size ?? 0)])
   )
-  const webtoonTotalStorage = Object.values(chapterStorageMap).reduce((s: number, v: number) => s + v, 0)
+  const webtoonTotalStorage = Object.values(chapterStorageMap).reduce((s, v) => s + v, 0)
 
   const initialData = {
     id: webtoon.id,
