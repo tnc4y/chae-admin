@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import DataTable, { Column } from '@/components/admin/DataTable'
-import { formatDate, formatNumber } from '@/lib/utils'
-import { Plus, Pencil, BookOpen } from 'lucide-react'
+import { formatDate, formatNumber, formatFileSize } from '@/lib/utils'
+import { Plus, Pencil, BookOpen, HardDrive } from 'lucide-react'
 
 const STATUS_LABELS: Record<string, string> = {
   ongoing: 'Devam Ediyor',
@@ -40,6 +40,7 @@ interface WebtoonRow {
   avg_rating: number
   created_at: string
   author: { name: string }[] | null
+  storage_size: number
 }
 
 export default function WebtoonsClient({ webtoons }: { webtoons: WebtoonRow[] }) {
@@ -102,6 +103,16 @@ export default function WebtoonsClient({ webtoons }: { webtoons: WebtoonRow[] })
       render: (v) => (
         <span className={`text-xs px-2 py-0.5 rounded-full ${v ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-400'}`}>
           {v ? 'Yayında' : 'Taslak'}
+        </span>
+      ),
+    },
+    {
+      key: 'storage_size',
+      label: 'Boyut',
+      render: (v) => (
+        <span className="flex items-center gap-1 text-slate-400 text-xs">
+          <HardDrive className="w-3 h-3 text-slate-600" />
+          {formatFileSize(v as number)}
         </span>
       ),
     },

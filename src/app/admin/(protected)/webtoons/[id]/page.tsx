@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Header from '@/components/admin/Header'
 import WebtoonForm from '@/components/admin/WebtoonForm'
-import { formatDate, formatNumber } from '@/lib/utils'
-import { BookOpen, Plus, Pencil } from 'lucide-react'
+import { formatDate, formatNumber, formatFileSize } from '@/lib/utils'
+import { BookOpen, Plus, Pencil, HardDrive } from 'lucide-react'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -27,6 +27,16 @@ export default async function WebtoonDetailPage({ params }: Props) {
     .select('id, chapter_number, title, is_published, is_premium, view_count, like_count, comment_count, page_count, published_at, created_at')
     .eq('webtoon_id', id)
     .order('chapter_number', { ascending: false })
+
+  const chapterIds = (chapters ?? []).map((c) => c.id)
+  const { data: chapterStorageRows } = chapterIds.length
+    ? await supabase.from('v_chapter_storage').select('chapter_id, total_size').in('chapter_id', chapterIds)
+    : { data: [] }
+
+  const chapterStorageMap = Object.fromEntries(
+    (chapterStorageRows ?? []).map((r) => [r.chapter_id, Number(r.total_size ?? 0)])
+  )
+  const webtoonTotalStorage = Object.values(chapterStorageMap).reduce((s, v) => s + v, 0)
 
   const initialData = {
     id: webtoon.id,
@@ -58,7 +68,15 @@ export default async function WebtoonDetailPage({ params }: Props) {
         <div className="max-w-4xl">
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-              <h2 className="text-white font-semibold">Bölümler ({chapters?.length ?? 0})</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-white font-semibold">Bölümler ({chapters?.length ?? 0})</h2>
+                {webtoonTotalStorage > 0 && (
+                  <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-lg">
+                    <HardDrive className="w-3 h-3 text-slate-500" />
+                    {formatFileSize(webtoonTotalStorage)}
+                  </span>
+                )}
+              </div>
               <Link
                 href={`/admin/webtoons/${id}/chapters/new`}
                 className="flex items-center gap-2 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition"
@@ -92,6 +110,12 @@ export default async function WebtoonDetailPage({ params }: Props) {
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
                         <span>{ch.page_count} sayfa</span>
+                        {chapterStorageMap[ch.id] > 0 && (
+                          <span className="flex items-center gap-0.5 text-slate-400">
+                            <HardDrive className="w-3 h-3" />
+                            {formatFileSize(chapterStorageMap[ch.id])}
+                          </span>
+                        )}
                         <span>{formatNumber(ch.view_count)} görüntülenme</span>
                         <span>{ch.like_count} beğeni</span>
                         <span>{ch.comment_count} yorum</span>

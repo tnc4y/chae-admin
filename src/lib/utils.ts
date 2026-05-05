@@ -43,3 +43,11 @@ export function truncate(text: string, length: number): string {
   if (text.length <= length) return text
   return text.slice(0, length) + '…'
 }
+
+export function formatFileSize(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}

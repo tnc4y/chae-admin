@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Header from '@/components/admin/Header'
 import StatsCard from '@/components/admin/StatsCard'
-import { formatNumber, formatDateTime } from '@/lib/utils'
+import { formatNumber, formatDateTime, formatFileSize } from '@/lib/utils'
 import {
   Users,
   BookMarked,
@@ -11,7 +11,15 @@ import {
   CreditCard,
   UserPlus,
   Flag,
+  HardDrive,
+  DollarSign,
 } from 'lucide-react'
+
+// S3 Standard fiyatlandırması (eu-north-1, USD)
+const S3_GB_MONTH = 0.023        // $0.023 / GB / ay
+const S3_PUT_PER_1K = 0.0053    // $0.0053 / 1.000 PUT isteği (yükleme)
+const S3_GET_PER_1K = 0.00042   // $0.00042 / 1.000 GET isteği (okuma)
+const CF_GB_OUT = 0.085          // $0.085 / GB CloudFront çıkış (ilk 10 TB)
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -27,6 +35,7 @@ export default async function DashboardPage() {
     { data: webtoonStats },
     { data: recentUsers },
     { data: recentWebtoons },
+    { data: storageData },
   ] = await Promise.all([
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
     supabase.from('webtoons').select('*', { count: 'exact', head: true }),
@@ -37,7 +46,20 @@ export default async function DashboardPage() {
     supabase.from('webtoons').select('view_count').order('view_count', { ascending: false }).limit(1),
     supabase.from('profiles').select('id, username, display_name, role, created_at').order('created_at', { ascending: false }).limit(5),
     supabase.from('webtoons').select('id, title, cover_url, chapter_count, view_count, status, created_at').order('created_at', { ascending: false }).limit(5),
+    supabase.from('v_webtoon_storage').select('total_size, total_pages'),
   ])
+
+  const totalStorageBytes = storageData?.reduce((sum, row) => sum + Number(row.total_size ?? 0), 0) ?? 0
+  const totalStorageGB = totalStorageBytes / (1024 * 1024 * 1024)
+
+  // S3 maliyet tahmini (aylık)
+  const totalPages = storageData?.reduce((sum, row) => sum + Number(row.total_pages ?? 0), 0) ?? 0
+  const s3StorageCost = totalStorageGB * S3_GB_MONTH
+  // PUT: her sayfa 1 istek (yükleme sırasında), GET: görüntülenme başına ~2 istek (thumbnail + resim)
+  const s3PutCost = (totalPages / 1000) * S3_PUT_PER_1K
+  const s3GetCost = ((webtoonStats?.[0]?.view_count ?? 0) * 2 / 1000) * S3_GET_PER_1K
+  const cfOutCost = totalStorageGB * CF_GB_OUT  // En kötü senaryo: tüm içerik 1 kez indirildi
+  const s3TotalMonthly = s3StorageCost + s3PutCost + s3GetCost
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -55,6 +77,7 @@ export default async function DashboardPage() {
     { title: 'Aktif Abonelik', value: formatNumber(activeSubscriptions ?? 0), icon: CreditCard, color: 'green' as const },
     { title: 'Yeni Üye (Bugün)', value: newUsersToday ?? 0, icon: UserPlus, color: 'violet' as const },
     { title: 'Bekleyen Şikayet', value: pendingReports ?? 0, icon: Flag, color: 'red' as const, change: pendingReports ? 'İnceleme bekliyor' : undefined, changeType: pendingReports ? 'down' as const : 'neutral' as const },
+    { title: 'Toplam Depolama', value: formatFileSize(totalStorageBytes), icon: HardDrive, color: 'blue' as const, change: 'Tüm sayfalar', changeType: 'neutral' as const },
   ]
 
   const roleColor: Record<string, string> = {
@@ -81,6 +104,58 @@ export default async function DashboardPage() {
           {stats.map((s) => (
             <StatsCard key={s.title} {...s} />
           ))}
+        </div>
+
+        {/* S3 Maliyet Tahmini */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-800 flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-white font-semibold text-sm">Tahmini AWS S3 Maliyeti</h2>
+            <span className="ml-auto text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">eu-north-1</span>
+          </div>
+          <div className="p-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+              <div className="bg-slate-800/50 rounded-lg p-3">
+                <p className="text-slate-400 text-xs mb-1">Depolama (Aylık)</p>
+                <p className="text-white font-bold text-lg">${s3StorageCost.toFixed(2)}</p>
+                <p className="text-slate-500 text-xs mt-0.5">{totalStorageGB.toFixed(2)} GB × $0.023</p>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-3">
+                <p className="text-slate-400 text-xs mb-1">İstek Maliyeti</p>
+                <p className="text-white font-bold text-lg">${(s3PutCost + s3GetCost).toFixed(3)}</p>
+                <p className="text-slate-500 text-xs mt-0.5">PUT + GET istekleri</p>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-3">
+                <p className="text-slate-400 text-xs mb-1">CloudFront (maks.)</p>
+                <p className="text-white font-bold text-lg">${cfOutCost.toFixed(2)}</p>
+                <p className="text-slate-500 text-xs mt-0.5">{totalStorageGB.toFixed(2)} GB × $0.085</p>
+              </div>
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                <p className="text-emerald-400 text-xs mb-1 font-medium">Aylık Toplam (S3)</p>
+                <p className="text-white font-bold text-lg">${s3TotalMonthly.toFixed(2)}</p>
+                <p className="text-slate-500 text-xs mt-0.5">Yıllık ~${(s3TotalMonthly * 12).toFixed(0)}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs text-slate-500 border-t border-slate-800 pt-4">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500/60 inline-block" />
+                S3 Standard: $0.023/GB/ay
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-violet-500/60 inline-block" />
+                PUT: $0.0053/1K istek
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-orange-500/60 inline-block" />
+                GET: $0.00042/1K istek
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500/60 inline-block" />
+                CF çıkış: $0.085/GB
+              </span>
+              <span className="ml-auto text-slate-600 italic">* Tahmini değerler, gerçek fatura farklı olabilir</span>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
